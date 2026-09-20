@@ -9,7 +9,9 @@ package agent
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"io"
 	"strings"
 
 	"icd10-agent/internal/llmclient"
@@ -64,8 +66,37 @@ func (a *Agent) Select(
 
 		if len(msg.ToolCalls) == 0 {
 			result, err := parseResult(msg.Content)
-			if err != nil {
-				return Result{}, messages, err
+
+			if err != nil && !isBadJSON(err) {
+				return Result{}, messages, fmt.Errorf("agent: parse final answer: %w", err)
+			}
+
+			switch {
+			case isBadJSON(err):
+				messages = append(messages, llmclient.Message{
+					Role: "user",
+					Content: fmt.Sprintf(
+						"Your previous reply was not valid JSON, so it was discarded.\n"+
+							"Quoted evidence: %s\nUpstream code: %s\n"+
+							"Respond now with ONLY a JSON object matching the schema: "+
+							`{"final_code": "string", "reason": "string"}. Do not call any tools.`,
+						quotedText, selectedICD),
+				})
+
+				continue
+
+			case result.FinalCode == "":
+				messages = append(messages, llmclient.Message{
+					Role: "user",
+					Content: fmt.Sprintf(
+						"You returned an empty final_code.\nQuoted evidence: %s\nUpstream code: %s\n"+
+							"Re-invoke the search_icd10 tool and review the results in this conversation — if "+
+							"one of them fits the evidence, respond with a JSON object using that "+
+							"code. Only return an empty final_code if none fit.",
+						quotedText, selectedICD),
+				})
+
+				continue
 			}
 
 			return result, messages, nil
@@ -82,6 +113,22 @@ func (a *Agent) Select(
 	}
 
 	return Result{}, messages, fmt.Errorf("agent: exceeded %d steps without a final answer", maxSteps)
+}
+
+// isBadJSON reports whether parseResult failed to decode the model's reply,
+// gating the malformed-JSON retry point in Select. This covers both clearly
+// invalid syntax and a truncated reply (io.ErrUnexpectedEOF, e.g. the model
+// was cut off mid-generation) — both are retryable, not fatal.
+func isBadJSON(err error) bool {
+	if err == nil {
+		return false
+	}
+
+	if _, ok := errors.AsType[*json.SyntaxError](err); ok {
+		return true
+	}
+
+	return errors.Is(err, io.ErrUnexpectedEOF)
 }
 
 // parseResult extracts the {"final_code","reason"} JSON object from the
