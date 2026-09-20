@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"strconv"
+	"strings"
 
 	"icd10-agent/internal/llmclient"
 	"icd10-agent/internal/rag"
@@ -71,6 +72,11 @@ func searchICD10Tool(r *rag.Retriever) (llmclient.Tool, func(llmclient.ToolCall)
 
 		if err := json.Unmarshal([]byte(call.Function.Arguments), &args); err != nil {
 			return fmt.Sprintf(`{"error": "invalid arguments: %s"}`, err)
+		}
+
+		args.Query = strings.TrimSpace(args.Query)
+		if args.Query == "" {
+			return `{"error": "missing required argument \"query\": a short clinical phrase to search for"}`
 		}
 
 		k := int(args.K)
