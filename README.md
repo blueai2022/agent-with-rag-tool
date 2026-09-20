@@ -1,27 +1,13 @@
-# icd10-agent
+# icd10-agent (RAG as a tool call)
 
-An agent use RAG call as a tool to ensure upstream agent does not have
-a "memory" mistake - an invalid ICD10 code or an imprecise one.
+An agent use RAG call as a tool to ensure upstream agent does not have a 
+mistake due to poor "memory" - a non-existent ICD10 code or an imprecise one.
 
-## The contrast this repo is making
+## A production RAG-calling Agent pipeline
 
 A production RAG + LLM-selector pipeline (the shape this repo is exported
-from) typically looks like this:
-
-```mermaid
-flowchart LR
-    Q[quoted text] --> E[embed + cosine search]
-    E --> L[fixed top-k lineup]
-    L --> P[one prompt: quote + upstream code + full lineup]
-    P --> LLM[single LLM call]
-    LLM --> R["{final_code, reason}"]
-```
-
-Neither shape is strictly "better" — the fixed pipeline is cheaper, faster,
-and fully deterministic (good for something like insurance underwriting);
-the agent loop is more flexible and can recover from a bad first query, at
-the cost of more LLM round-trips and less predictable behavior. This repo
-exists to make that shape difference concrete and runnable.
+from) typically has extracted ICDs and quoted text. This agent ensure a
+corrective Agent based on RAG-based retrieval.
 
 ## What's in here
 
