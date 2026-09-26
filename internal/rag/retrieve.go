@@ -13,10 +13,15 @@ func NewRetriever(e Embedder, ix *Index) *Retriever {
 }
 
 // Retrieve embeds the query and returns the top-k candidates.
-func (r *Retriever) Retrieve(ctx context.Context, query string, k int) ([]Candidate, error) {
+func (r *Retriever) Retrieve(
+	ctx context.Context,
+	query string,
+	k int,
+) ([]Candidate, error) {
 	vecs, err := r.Embed.Embed(ctx, []string{query})
 	if err != nil {
 		return nil, err
 	}
+
 	return r.Index.Search(vecs[0], k)
 }
