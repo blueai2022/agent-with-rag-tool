@@ -7,7 +7,7 @@ import (
 	"strconv"
 	"strings"
 
-	llm "icd10-agent/internal/llm"
+	"icd10-agent/internal/llm"
 	"icd10-agent/internal/rag"
 )
 
