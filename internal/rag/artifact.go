@@ -153,7 +153,12 @@ func ReadArtifact(r io.Reader) (model string, ix *Index, err error) {
 		}
 	}
 
-	return model, NewIndex(int(dim), codes, meta, vecs), nil
+	ix, err = NewIndex(int(dim), codes, meta, vecs)
+	if err != nil {
+		return "", nil, err
+	}
+
+	return model, ix, nil
 }
 
 // LoadIndex loads an index from a file path.
