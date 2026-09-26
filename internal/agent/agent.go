@@ -58,58 +58,63 @@ func (a *Agent) Select(
 	}
 
 	for range maxSteps {
-		msg, err := a.llm.Chat(ctx, messages, tools)
+		rsp, err := a.llm.Chat(ctx, messages, tools)
 		if err != nil {
 			return Result{}, messages, fmt.Errorf("agent: chat call failed: %w", err)
 		}
-		messages = append(messages, msg)
 
-		if len(msg.ToolCalls) == 0 {
-			result, err := parseResult(msg.Content)
+		// Append the model response, including any tool calls.
+		messages = append(messages, rsp)
 
-			if err != nil && !isBadJSON(err) {
-				return Result{}, messages, fmt.Errorf("agent: parse final answer: %w", err)
+		if len(rsp.ToolCalls) > 0 {
+			for _, call := range rsp.ToolCalls {
+				out := dispatch(call)
+				messages = append(messages, llmclient.Message{ // Append a tool response
+					Role:       "tool",
+					ToolCallID: call.ID,
+					Content:    out,
+				})
 			}
 
-			switch {
-			case isBadJSON(err):
-				messages = append(messages, llmclient.Message{
-					Role: "user",
-					Content: fmt.Sprintf(
-						"Your previous reply was not valid JSON, so it was discarded.\n"+
-							"Quoted evidence: %s\nUpstream code: %s\n"+
-							"Respond now with ONLY a JSON object matching the schema: "+
-							`{"final_code": "string", "reason": "string"}. Do not call any tools.`,
-						quotedText, selectedICD),
-				})
-
-				continue
-
-			case result.FinalCode == "":
-				messages = append(messages, llmclient.Message{
-					Role: "user",
-					Content: fmt.Sprintf(
-						"You returned an empty final_code.\nQuoted evidence: %s\nUpstream code: %s\n"+
-							"Re-invoke the search_icd10 tool and review the results in this conversation — if "+
-							"one of them fits the evidence, respond with a JSON object using that "+
-							"code. Only return an empty final_code if none fit.",
-						quotedText, selectedICD),
-				})
-
-				continue
-			}
-
-			return result, messages, nil
+			continue
 		}
 
-		for _, call := range msg.ToolCalls {
-			out := dispatch(call)
+		// Final model answer parsing and validation
+		result, err := parseResult(rsp.Content)
+
+		if err != nil && !isBadJSON(err) { // true fatal errors
+			return Result{}, messages, fmt.Errorf("agent: parse final answer: %w", err)
+		}
+
+		if isBadJSON(err) { // handle small LLMs that may produce malformed JSON
 			messages = append(messages, llmclient.Message{
-				Role:       "tool",
-				ToolCallID: call.ID,
-				Content:    out,
+				Role: "user",
+				Content: fmt.Sprintf(
+					"Your previous reply was not valid JSON, so it was discarded.\n"+
+						"Quoted evidence: %s\nUpstream code: %s\n"+
+						"Respond now with ONLY a JSON object matching the schema: "+
+						`{"final_code": "string", "reason": "string"}. Do not call any tools.`,
+					quotedText, selectedICD),
 			})
+
+			continue // retry
 		}
+
+		if result.FinalCode == "" { // handle small LLMs that may select nothing
+			messages = append(messages, llmclient.Message{
+				Role: "user",
+				Content: fmt.Sprintf(
+					"You returned an empty final_code.\nQuoted evidence: %s\nUpstream code: %s\n"+
+						"Re-invoke the search_icd10 tool and review the results in this conversation — if "+
+						"one of them fits the evidence, respond with a JSON object using that "+
+						"code. Only return an empty final_code if none fit.",
+					quotedText, selectedICD),
+			})
+
+			continue // retry
+		}
+
+		return result, messages, nil
 	}
 
 	return Result{}, messages, fmt.Errorf("agent: exceeded %d steps without a final answer", maxSteps)
