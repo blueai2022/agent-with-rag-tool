@@ -7,7 +7,7 @@ import (
 	"strconv"
 	"strings"
 
-	"icd10-agent/internal/llmclient"
+	"icd10-agent/internal/llm"
 	"icd10-agent/internal/rag"
 )
 
@@ -43,10 +43,10 @@ func (fi *flexInt) UnmarshalJSON(data []byte) error {
 // that runs it against c and always returns a string (errors are reported
 // back to the model as tool output, not returned to the caller, so a bad
 // argument doesn't abort the loop).
-func searchICD10Tool(r *rag.Retriever) (llmclient.Tool, func(llmclient.ToolCall) string) {
-	schema := llmclient.Tool{
+func searchICD10Tool(r *rag.Retriever) (llm.Tool, func(llm.ToolCall) string) {
+	schema := llm.Tool{
 		Type: "function",
-		Function: llmclient.Function{
+		Function: llm.Function{
 			Name:        "search_icd10",
 			Description: "Search the ICD-10-CM sample corpus for candidate codes matching a short clinical phrase.",
 			Parameters: json.RawMessage(`{
@@ -60,7 +60,7 @@ func searchICD10Tool(r *rag.Retriever) (llmclient.Tool, func(llmclient.ToolCall)
 		},
 	}
 
-	dispatch := func(call llmclient.ToolCall) string {
+	dispatch := func(call llm.ToolCall) string {
 		if call.Function.Name != "search_icd10" {
 			return fmt.Sprintf(`{"error": "unknown tool %q"}`, call.Function.Name)
 		}
