@@ -128,7 +128,11 @@ func isBadJSON(err error) bool {
 		return true
 	}
 
-	return errors.Is(err, io.ErrUnexpectedEOF)
+	if errors.Is(err, io.ErrUnexpectedEOF) {
+		return true
+	}
+
+	return false
 }
 
 // parseResult extracts the {"final_code","reason"} JSON object from the

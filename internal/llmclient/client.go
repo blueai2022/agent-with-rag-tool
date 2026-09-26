@@ -52,6 +52,9 @@ type Function struct {
 	Parameters  json.RawMessage `json:"parameters"`
 }
 
+// ToolCallHandler is a function that handles a tool call and returns its output as a string.
+type ToolCallHandler func(call ToolCall) string
+
 // Client calls an OpenAI-compatible /chat/completions endpoint.
 type Client struct {
 	BaseURL string // e.g. "https://api.openai.com/v1" or "http://localhost:11434/v1"
