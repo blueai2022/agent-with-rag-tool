@@ -91,7 +91,11 @@ func main() {
 		log.Printf("embedded %d/%d codes", end, len(meta))
 	}
 
-	ix := rag.NewIndex(dim, codes, meta, vecs)
+	ix, err := rag.NewIndex(dim, codes, meta, vecs)
+	if err != nil {
+		log.Fatalf("build index: %v", err)
+	}
+	defer ix.Close()
 
 	out, err := os.Create(*outPath)
 	if err != nil {

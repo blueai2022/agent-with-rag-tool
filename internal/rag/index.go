@@ -3,8 +3,9 @@ package rag
 import (
 	"fmt"
 	"math"
-	"sort"
 	"strings"
+
+	faiss "github.com/DataIntelligenceCrew/go-faiss"
 )
 
 // Candidate is one retrieval result.
@@ -15,32 +16,51 @@ type Candidate struct {
 	Score       float32
 }
 
-// Index is an in-memory vector index over billable ICD codes.
+// Index is an in-memory vector index over billable ICD codes, backed by a
+// Faiss flat inner-product index over L2-normalized vectors (equivalent to
+// exact cosine-similarity search).
 type Index struct {
-	dim      int
-	codes    []string
-	meta     []CodeMeta
-	vecs     []float32 // len(codes)*dim, row-major
-	normVecs []float32 // ||vecs[i]||
+	dim   int
+	codes []string
+	meta  []CodeMeta
+	vecs  []float32 // len(codes)*dim, row-major
+	faiss faiss.Index
 }
 
 // NewIndex builds an index from codes, their metadata, and a row-major vector
 // slice (len(codes)*dim).
-func NewIndex(dim int, codes []string, meta []CodeMeta, vecs []float32) *Index {
+func NewIndex(dim int, codes []string, meta []CodeMeta, vecs []float32) (*Index, error) {
 	n := len(codes)
-	normVecs := make([]float32, n)
 
-	for i := range n {
-		normVecs[i] = l2Norm(vecs[i*dim : (i+1)*dim])
+	idx, err := faiss.NewIndexFlatIP(dim)
+	if err != nil {
+		return nil, fmt.Errorf("rag: create faiss index: %w", err)
+	}
+
+	if n > 0 {
+		normalized := make([]float32, len(vecs))
+		copy(normalized, vecs)
+		for i := range n {
+			l2Normalize(normalized[i*dim : (i+1)*dim])
+		}
+
+		if err := idx.Add(normalized); err != nil {
+			return nil, fmt.Errorf("rag: add vectors to faiss index: %w", err)
+		}
 	}
 
 	return &Index{
-		dim:      dim,
-		codes:    codes,
-		meta:     meta,
-		vecs:     vecs,
-		normVecs: normVecs,
-	}
+		dim:   dim,
+		codes: codes,
+		meta:  meta,
+		vecs:  vecs,
+		faiss: idx,
+	}, nil
+}
+
+// Close releases the memory held by the underlying Faiss index.
+func (ix *Index) Close() {
+	ix.faiss.Delete()
 }
 
 func (ix *Index) Len() int {
@@ -74,56 +94,47 @@ func (ix *Index) Search(query []float32, k int) ([]Candidate, error) {
 		return nil, nil
 	}
 
-	normalizedQuery := l2Norm(query)
+	k = min(k, len(ix.codes))
 
-	type scored struct {
-		idx   int
-		score float32
+	normalizedQuery := make([]float32, len(query))
+	copy(normalizedQuery, query)
+	l2Normalize(normalizedQuery)
+
+	scores, labels, err := ix.faiss.Search(normalizedQuery, int64(k))
+	if err != nil {
+		return nil, fmt.Errorf("rag: faiss search: %w", err)
 	}
-	scores := make([]scored, len(ix.codes))
-	for i := range ix.codes {
-		s := float32(0)
-		if normalizedQuery != 0 && ix.normVecs[i] != 0 {
-			s = dot(query, ix.vecs[i*ix.dim:(i+1)*ix.dim]) / (normalizedQuery * ix.normVecs[i])
+
+	out := make([]Candidate, 0, k)
+	for i, label := range labels {
+		if label < 0 {
+			continue
 		}
-		scores[i] = scored{idx: i, score: s}
-	}
-	sort.Slice(scores, func(a, b int) bool { return scores[a].score > scores[b].score })
-
-	k = min(k, len(scores))
-
-	out := make([]Candidate, k)
-	for i := 0; i < k; i++ {
-		m := ix.meta[scores[i].idx]
-		out[i] = Candidate{
+		m := ix.meta[label]
+		out = append(out, Candidate{
 			Code:        m.Code,
 			Description: DisplayDescription(m),
 			CodeAlso:    m.CodeAlso,
-			Score:       scores[i].score,
-		}
+			Score:       scores[i],
+		})
 	}
 
 	return out, nil
 }
 
-// dot returns the dot product of two vectors. Both vectors must have the same length.
-func dot(a, b []float32) float32 {
+// l2Normalize scales v to unit L2 norm, leaving zero vectors unchanged.
+func l2Normalize(v []float32) {
 	var s float32
-
-	for i := range a {
-		s += a[i] * b[i]
-	}
-
-	return s
-}
-
-// norm returns the Euclidean norm (L2) of a vector.
-func l2Norm(v []float32) float32 {
-	var s float32
-
 	for _, x := range v {
 		s += x * x
 	}
 
-	return float32(math.Sqrt(float64(s)))
+	if s == 0 {
+		return
+	}
+
+	n := float32(math.Sqrt(float64(s)))
+	for i := range v {
+		v[i] /= n
+	}
 }
