@@ -12,7 +12,7 @@ import (
 	"os"
 
 	"icd10-agent/internal/agent"
-	"icd10-agent/internal/llmclient"
+	"icd10-agent/internal/llm"
 	"icd10-agent/internal/rag"
 )
 
@@ -48,8 +48,8 @@ func main() {
 		log.Fatalf("icd10-agent: read system prompt: %v", err)
 	}
 
-	llm := llmclient.New(*baseURL, *apiKey, *model, nil)
-	a := agent.New(llm, retriever, string(systemPrompt))
+	llmClient := llm.New(*baseURL, *apiKey, *model, nil)
+	a := agent.New(llmClient, retriever, string(systemPrompt))
 
 	result, transcript, err := a.Select(context.Background(), *quoted, *code)
 	if *verbose {

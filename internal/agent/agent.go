@@ -14,7 +14,7 @@ import (
 	"io"
 	"strings"
 
-	"icd10-agent/internal/llmclient"
+	"icd10-agent/internal/llm"
 	"icd10-agent/internal/rag"
 )
 
@@ -32,14 +32,14 @@ type Result struct {
 // Agent wires an LLM client, a search tool over a corpus, and a system
 // prompt into a single-purpose ReAct-style loop.
 type Agent struct {
-	llm          *llmclient.Client
+	llmClient    *llm.Client
 	retriever    *rag.Retriever
 	systemPrompt string
 }
 
 // New constructs an Agent.
-func New(llm *llmclient.Client, r *rag.Retriever, systemPrompt string) *Agent {
-	return &Agent{llm: llm, retriever: r, systemPrompt: systemPrompt}
+func New(llmClient *llm.Client, r *rag.Retriever, systemPrompt string) *Agent {
+	return &Agent{llmClient: llmClient, retriever: r, systemPrompt: systemPrompt}
 }
 
 // Select runs the agent loop for one (quotedText, selectedICD) case and
@@ -48,17 +48,17 @@ func New(llm *llmclient.Client, r *rag.Retriever, systemPrompt string) *Agent {
 func (a *Agent) Select(
 	ctx context.Context,
 	quotedText, selectedICD string,
-) (Result, []llmclient.Message, error) {
+) (Result, []llm.Message, error) {
 	tool, dispatch := searchICD10Tool(a.retriever)
-	tools := []llmclient.Tool{tool}
+	tools := []llm.Tool{tool}
 
-	messages := []llmclient.Message{
+	messages := []llm.Message{
 		{Role: "system", Content: a.systemPrompt},
 		{Role: "user", Content: fmt.Sprintf("Quoted evidence: %s\nUpstream code: %s", quotedText, selectedICD)},
 	}
 
 	for range maxSteps {
-		rsp, err := a.llm.Chat(ctx, messages, tools)
+		rsp, err := a.llmClient.Chat(ctx, messages, tools)
 		if err != nil {
 			return Result{}, messages, fmt.Errorf("agent: chat call failed: %w", err)
 		}
@@ -69,7 +69,7 @@ func (a *Agent) Select(
 		if len(rsp.ToolCalls) > 0 {
 			for _, call := range rsp.ToolCalls {
 				out := dispatch(call)
-				messages = append(messages, llmclient.Message{ // Append a tool response
+				messages = append(messages, llm.Message{ // Append a tool response
 					Role:       "tool",
 					ToolCallID: call.ID,
 					Content:    out,
@@ -87,7 +87,7 @@ func (a *Agent) Select(
 		}
 
 		if isBadJSON(err) { // handle small LLMs that may produce malformed JSON
-			messages = append(messages, llmclient.Message{
+			messages = append(messages, llm.Message{
 				Role: "user",
 				Content: fmt.Sprintf(
 					"Your previous reply was not valid JSON, so it was discarded.\n"+
@@ -101,7 +101,7 @@ func (a *Agent) Select(
 		}
 
 		if result.FinalCode == "" { // handle small LLMs that may select nothing
-			messages = append(messages, llmclient.Message{
+			messages = append(messages, llm.Message{
 				Role: "user",
 				Content: fmt.Sprintf(
 					"You returned an empty final_code.\nQuoted evidence: %s\nUpstream code: %s\n"+

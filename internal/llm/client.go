@@ -1,9 +1,9 @@
-// Package llmclient is a minimal OpenAI-compatible chat-completions client
+// Package llm is a minimal OpenAI-compatible chat-completions client
 // with tool (function) calling — the one HTTP call this whole repo needs.
 // It works against OpenAI itself, or any OpenAI-compatible endpoint that
 // supports tool calling (e.g. a local Ollama server's /v1 endpoint with a
 // tool-calling capable model).
-package llmclient
+package llm
 
 import (
 	"bytes"
@@ -92,12 +92,12 @@ type chatResponse struct {
 func (c *Client) Chat(ctx context.Context, messages []Message, tools []Tool) (Message, error) {
 	body, err := json.Marshal(chatRequest{Model: c.Model, Messages: messages, Tools: tools})
 	if err != nil {
-		return Message{}, fmt.Errorf("llmclient: encode request: %w", err)
+		return Message{}, fmt.Errorf("llm: encode request: %w", err)
 	}
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.BaseURL+"/chat/completions", bytes.NewReader(body))
 	if err != nil {
-		return Message{}, fmt.Errorf("llmclient: build request: %w", err)
+		return Message{}, fmt.Errorf("llm: build request: %w", err)
 	}
 	req.Header.Set("Content-Type", "application/json")
 	if c.APIKey != "" {
@@ -106,27 +106,27 @@ func (c *Client) Chat(ctx context.Context, messages []Message, tools []Tool) (Me
 
 	resp, err := c.HTTP.Do(req)
 	if err != nil {
-		return Message{}, fmt.Errorf("llmclient: request failed: %w", err)
+		return Message{}, fmt.Errorf("llm: request failed: %w", err)
 	}
 	defer resp.Body.Close()
 
 	respBody, err := io.ReadAll(resp.Body)
 	if err != nil {
-		return Message{}, fmt.Errorf("llmclient: read response: %w", err)
+		return Message{}, fmt.Errorf("llm: read response: %w", err)
 	}
 	if resp.StatusCode != http.StatusOK {
-		return Message{}, fmt.Errorf("llmclient: %s returned %d: %s", c.BaseURL, resp.StatusCode, respBody)
+		return Message{}, fmt.Errorf("llm: %s returned %d: %s", c.BaseURL, resp.StatusCode, respBody)
 	}
 
 	var out chatResponse
 	if err := json.Unmarshal(respBody, &out); err != nil {
-		return Message{}, fmt.Errorf("llmclient: decode response: %w", err)
+		return Message{}, fmt.Errorf("llm: decode response: %w", err)
 	}
 	if out.Error != nil {
-		return Message{}, fmt.Errorf("llmclient: api error: %s", out.Error.Message)
+		return Message{}, fmt.Errorf("llm: api error: %s", out.Error.Message)
 	}
 	if len(out.Choices) == 0 {
-		return Message{}, fmt.Errorf("llmclient: response had no choices")
+		return Message{}, fmt.Errorf("llm: response had no choices")
 	}
 	return out.Choices[0].Message, nil
 }

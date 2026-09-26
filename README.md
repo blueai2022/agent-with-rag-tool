@@ -17,7 +17,7 @@ corrective Agent based on RAG-based retrieval.
   artifact format so `cmd/rag-build` embeds the corpus once offline and the
   agent just loads the prebuilt index at runtime instead of re-embedding it
   on every run.
-- `internal/llmclient` — a minimal OpenAI-compatible chat-completions client
+- `internal/llm` — a minimal OpenAI-compatible chat-completions client
   with tool calling (~100 lines, no SDK dependency).
 - `internal/agent` — the loop itself: send messages + tool schema, execute
   any tool calls the model makes, append results, repeat until the model
